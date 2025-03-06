@@ -160,7 +160,7 @@ const LogOutUser = asyncHandler(async (req, res) => {
         .json(new ApiResponse(200, {}, "User logged out successfully"));
 });
 
-
+//refreshAccessToken
 const refreshAccessToken = asyncHandler(async (req, res) => {
     const incomingRefreshToken = req.cookies.refreshToken || req.body.refreshToken;
 
@@ -214,7 +214,7 @@ const refreshAccessToken = asyncHandler(async (req, res) => {
     }
 })
 
-
+//changePassword
 const changeUsesrPassword = asyncHandler(async (req,res) => {
     const { oldPassword, newPassword }  = req.body;
 
@@ -292,7 +292,18 @@ $set: {
         {new : true }
     )
 
+        // TO do delete old image from cloudinary
 
+        
+// Helper Function: Delete from Cloudinary
+const deleteFromCloudinary = async (publicId) => {
+    const cloudinary = require("cloudinary").v2; // Ensure Cloudinary is configured
+    try {
+        await cloudinary.uploader.destroy(publicId);
+    } catch (error) {
+        console.error("Error deleting from Cloudinary:", error);
+    }
+};
     
     return res.status(200).json(new ApiResponse(200, user, "user cover image updated successfully"))
 })
@@ -326,8 +337,129 @@ $set: {
     return res.status(200).json(new ApiResponse(200, user, "user cover image updated successfully"))
 })
 
+ 
+const getUserChanelProfile= asyncHandler(async ( req,res)=>{
+
+    const { username } =req.params;
+
+    if(!username){
+        throw new ApiError(400 , " username is missing ")
+    }a
+        
+// we use this  aggrigation pipline to get the user profile and the user  post 
+
+    const channel = await User.aggregate([
+        {
+            $match: {   username : username?.toLowerCase()}
+        },
+        {
+            $lookup: {
+                from: "subscriptions",
+                localField : "_id",
+                foreignField : "channel",
+                as : "subscribers"
+            },
+        },
+        {
+             $lookup : {
+                from: "subscriptions",
+                localField : "_id",
+                foreignField : "subscriber",
+                as : "subscriberTo"
+             }
+        },
+        {
+            $addFields : {
+                subscribersCount : { 
+                    $size : " $subscribers "
+                },
+                channelSubscribedToCount : {
+                    $size : "$subscriberTo"
+                },
+                isSubscribed : {
+                    if : {
+                        $in: [req.user?._id, "$subscribers.subscriber"]
+                        then : true ,
+                        else : false
+                    }
+                }
+            }
+        }
+        {
+
+            // $project is used to select the fields that we want to tetrun 
+            $project : {
+                fullName : 1,
+                Username : 1,
+                subscribersCount : 1,
+                channelSubscribedToCount : 1,
+                isSubscribed : 1,
+                avatar : 1,
+                coverImage : 1,
+                email : 1,
 
 
+
+            }
+        }
+    ])
+
+    if(!channel?.length){
+        throw new ApiError(400, "Channel not found || not exist ")
+    }
+    return res
+    .status(200)
+    .join( new ApiResponse(200, channel[0], "channel profile fetched successfully "))
+})
+
+
+const getWatchHistory = asyncHandler(async ( req, res)=> {
+    const user = await User.aggregate([
+        {
+            $match : {
+                _id : mongoose.Types.ObjectId(req.user._id)
+            }
+        },
+        {
+            $lookup : {
+                from : "videos",
+                localField : "watchHistory",
+                foreignField : " _id",
+                as: "watchHistory",
+                pipline : [
+                    {
+                        $lookup: {
+                            from : "users",
+                            localField : "owner",
+                            foreignField : "_id",
+                            as : "owner",
+                            pipline : [
+                                $project{
+                                    fullName : 1,
+                                    username : 1,
+                                    avatar : 1
+                                },
+                                
+                            ]
+                        }
+                    },{
+                        $addFields : {
+                            owner : { $first : "$owner"}
+                        }
+                    }
+                ]
+
+
+            }
+        }
+    ])
+    return res
+    .status(200)
+    .json(new ApiResponse(200,
+        user[0].watchHistory,
+        "watch history fetch successfuly=ly"
+    ))
+})
 
 
 export { registerUser,
@@ -338,4 +470,5 @@ export { registerUser,
      changeUsesrPassword ,
      UpdateAccountDetail,
      UpdateUserCoverImage,
+     getWatchHistory,
      UpdateUserAvatar};
